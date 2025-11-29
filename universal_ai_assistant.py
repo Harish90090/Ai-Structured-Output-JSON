@@ -33,6 +33,7 @@ AVAILABLE_MODELS = {
 # Sidebar for configuration
 with st.sidebar:
     st.header("Configuration")
+
     
     selected_model = st.selectbox(
         "Select Model",
@@ -245,7 +246,4 @@ if st.session_state.conversation_history:
             st.write(f"**Model:** {conv['model']}")
             st.write(f"**Request:** {conv['request']}")
             st.json(conv['response'])
-
-
-
 
