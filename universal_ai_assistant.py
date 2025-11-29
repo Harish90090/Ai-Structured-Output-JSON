@@ -34,16 +34,6 @@ AVAILABLE_MODELS = {
 with st.sidebar:
     st.header("Configuration")
     
-    api_key = st.text_input(
-        "Gemini API Key",
-        value=st.session_state.api_key,
-        type="password",
-        help="Get your API key from https://aistudio.google.com/"
-    )
-    
-    if api_key:
-        st.session_state.api_key = api_key
-    
     selected_model = st.selectbox(
         "Select Model",
         options=list(AVAILABLE_MODELS.keys()),
@@ -255,6 +245,7 @@ if st.session_state.conversation_history:
             st.write(f"**Model:** {conv['model']}")
             st.write(f"**Request:** {conv['request']}")
             st.json(conv['response'])
+
 
 
 
