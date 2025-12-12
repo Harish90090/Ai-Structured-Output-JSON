@@ -1,10 +1,10 @@
 import streamlit as st
-import google.generativeai as genai
 import json
 import os
 import re
 from dotenv import load_dotenv
 from datetime import datetime
+from groq import Groq
 
 load_dotenv()
 
@@ -16,51 +16,65 @@ st.set_page_config(
 if 'conversation_history' not in st.session_state:
     st.session_state.conversation_history = []
 if 'api_key' not in st.session_state:
-    st.session_state.api_key = os.getenv('GEMINI_API_KEY')
+    st.session_state.api_key = os.getenv('GROQ_API_KEY')
 
-st.title("🤖 Universal AI Assistant")
-st.markdown("**Powered by Google Gemini AI** - Get structured JSON responses for any task!")
+st.title(" Universal AI Assistant")
+st.markdown("**Powered by Groq API** - Get structured JSON responses for any task!")
 
-# Available Gemini models
+# Available Groq models (updated list)
 AVAILABLE_MODELS = {
-    "gemini-2.0-flash": "Fast & versatile (Recommended)",
-    "gemini-1.5-flash": "Fast & efficient", 
-    "gemini-1.5-pro": "Advanced reasoning",
-    "gemini-2.5-flash-preview-03-25": "Latest Flash preview",
-    "gemini-2.5-pro-preview-03-25": "Latest Pro preview"
+    "llama-3.3-70b-versatile": "Llama 3.3 70B - Most capable",
+    "llama-3.1-8b-instant": "Llama 3.1 8B - Fast & efficient",
+    "llama-3.2-1b-preview": "Llama 3.2 1B - Lightweight",
+    "llama-3.2-3b-preview": "Llama 3.2 3B - Balanced",
+    "llama-3.2-90b-vision-preview": "Llama 3.2 90B Vision - Multimodal",
+    "llama-guard-3-8b": "Llama Guard 3 8B - Safety focused",
+    "gemma2-9b-it": "Gemma2 9B - Google's model",
+    "mixtral-8x7b-32768": "Mixtral 8x7B - Expert mixture",
 }
 
 # Sidebar for configuration
 with st.sidebar:
-    st.header("Configuration")
+    st.header(" Configuration")
+    
+    # API Key input
 
     
     selected_model = st.selectbox(
-        "Select Model",
+        " Select Model",
         options=list(AVAILABLE_MODELS.keys()),
         format_func=lambda x: f"{x} - {AVAILABLE_MODELS[x]}",
         index=0
     )
     
-    st.subheader("Response Format")
+    # Temperature slider for creativity control
+    temperature = st.slider(
+        " Temperature",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.3,
+        step=0.1,
+        help="Lower = more deterministic, Higher = more creative"
+    )
+    
+    st.subheader(" Response Format")
     response_type = st.selectbox(
         "Output Structure",
         ["Auto JSON", "Structured Data", "Key-Value Pairs", "Custom Schema"]
     )
     
+    st.divider()
+    st.info("**Tip:** For JSON output, use models like llama-3.3-70b for best results")
 
-    
-
-
-# Initialize Gemini API
-def setup_gemini():
+# Initialize Groq client
+def setup_groq():
     if not st.session_state.api_key:
-        st.error(" Please enter your Gemini API key in the sidebar")
+        st.error("Please enter your Groq API key in the sidebar")
         return None
     
     try:
-        genai.configure(api_key=st.session_state.api_key)
-        return genai.GenerativeModel(selected_model)
+        client = Groq(api_key=st.session_state.api_key)
+        return client
     except Exception as e:
         st.error(f" API configuration failed: {str(e)}")
         return None
@@ -83,21 +97,19 @@ def extract_json_from_text(text):
 
 # Function to generate structured response
 def generate_structured_response(user_input):
-    model = setup_gemini()
-    if not model:
+    client = setup_groq()
+    if not client:
         return None
     
-    prompt = f"""
-    Analyze this request and generate a comprehensive, structured response in VALID JSON format.
-    
-    USER REQUEST: {user_input}
-    
+    # System prompt for JSON formatting
+    system_prompt = """You are a JSON formatting assistant. Your task is to convert user requests into well-structured JSON format.
+
     REQUIREMENTS:
-    1. Return ONLY valid JSON, no additional text
+    1. Return ONLY valid JSON, no additional text, no markdown, no explanations
     2. Structure should match the request type
     3. Include all relevant details in organized format
-    4. Use proper JSON syntax
-    5. Make it comprehensive and actionable
+    4. Use proper JSON syntax with double quotes
+    5. Make responses comprehensive and actionable
     
     JSON STRUCTURE GUIDELINES:
     - For plans: include timeline, steps, resources, expected_outcomes
@@ -105,14 +117,23 @@ def generate_structured_response(user_input):
     - For ideas: include categories, descriptions, feasibility, steps
     - For schedules: include time_blocks, activities, goals, adjustments
     
-    Response must be pure JSON:
-    """
+    IMPORTANT: Output must be pure JSON only, starting with { and ending with }"""
     
     try:
-        response = model.generate_content(prompt)
-        return response.text
+        completion = client.chat.completions.create(
+            model=selected_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Convert this request to structured JSON: {user_input}"}
+            ],
+            temperature=temperature,
+            max_tokens=4096,
+            response_format={"type": "json_object"}
+        )
+        
+        return completion.choices[0].message.content
     except Exception as e:
-        st.error(f"❌ API Error: {str(e)}")
+        st.error(f" API Error: {str(e)}")
         return None
 
 # Function to display JSON in a user-friendly way
@@ -126,11 +147,11 @@ def display_structured_data(data):
         key_display = key.replace('_', ' ').title()
         
         if isinstance(value, dict):
-            with st.expander(f"📁 {key_display}"):
+            with st.expander(f" {key_display}"):
                 for sub_key, sub_value in value.items():
                     display_item(sub_key, sub_value)
         elif isinstance(value, list):
-            with st.expander(f"📋 {key_display} ({len(value)} items)"):
+            with st.expander(f"{key_display} ({len(value)} items)"):
                 for i, item in enumerate(value, 1):
                     if isinstance(item, dict):
                         st.subheader(f"Item {i}")
@@ -146,7 +167,7 @@ def display_item(key, value):
     key_display = key.replace('_', ' ').title()
     
     if isinstance(value, bool):
-        st.write(f"**{key_display}:** {' Yes' if value else '❌ No'}")
+        st.write(f"**{key_display}:** {'Yes' if value else 'No'}")
     elif isinstance(value, (int, float)):
         st.metric(key_display, value)
     elif isinstance(value, list):
@@ -167,27 +188,16 @@ with col1:
         "Describe what you need:",
         placeholder="e.g., Create a marketing plan, Analyze data, Generate ideas, Build schedule...",
         height=150,
-        key="user_input"
+        key="user_input",
+        help="Be specific for better JSON structure"
     )
     
-    # Action buttons
-    st.subheader(" Quick Actions")
-    if st.button("Generate Plan", use_container_width=True):
-        if user_input:
-            st.session_state.action = "plan"
-    
-    if st.button("Analyze Data", use_container_width=True):
-        if user_input:
-            st.session_state.action = "analyze"
-    
-    if st.button("Brainstorm", use_container_width=True):
-        if user_input:
-            st.session_state.action = "brainstorm"
+   
 
 with col2:
     st.subheader(" Generate Response")
     
-    if st.button(" Process Request", type="primary", use_container_width=True):
+    if st.button("Process Request", type="primary", use_container_width=True):
         if user_input and st.session_state.api_key:
             with st.spinner("AI is processing your request..."):
                 # Generate response
@@ -198,10 +208,10 @@ with col2:
                     json_data = extract_json_from_text(response_text)
                     
                     if json_data:
-                        st.success("Response Generated Successfully!")
+                        st.success("✅ Response Generated Successfully!")
                         
                         # Display model info
-                        st.info(f"**Model used:** {selected_model}")
+                        st.info(f"**Model used:** {selected_model} | **Temperature:** {temperature}")
                         
                         # Display structured data
                         display_structured_data(json_data)
@@ -216,7 +226,8 @@ with col2:
                             label=" Download JSON",
                             data=json_str,
                             file_name=f"ai_response_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                            mime="application/json"
+                            mime="application/json",
+                            use_container_width=True
                         )
                         
                         # Add to conversation history
@@ -227,23 +238,32 @@ with col2:
                             'model': selected_model
                         })
                     else:
-                        st.error(" Failed to parse JSON response")
-                        st.info(" Raw response for debugging:")
+                        st.error("Failed to parse JSON response")
+                        st.info("Raw response for debugging:")
                         st.code(response_text)
                 else:
-                    st.error("Failed to generate response. Please try again.")
+                    st.error("❌ Failed to generate response. Please try again.")
         else:
             if not user_input:
-                st.error("Please enter your request")
+                st.error(" Please enter your request")
             if not st.session_state.api_key:
-                st.error(" Please enter your Gemini API key in the sidebar")
+                st.error("Please enter your Groq API key in the sidebar")
 
 # Conversation history
 if st.session_state.conversation_history:
+    st.divider()
     st.subheader(" Recent Conversations")
     for i, conv in enumerate(reversed(st.session_state.conversation_history[-3:])):
         with st.expander(f" {conv['timestamp']} - {conv['request'][:60]}..."):
             st.write(f"**Model:** {conv['model']}")
             st.write(f"**Request:** {conv['request']}")
             st.json(conv['response'])
+            
+            # Quick action to reuse
+            if st.button(f" Reuse this request", key=f"reuse_{i}"):
+                st.session_state.user_input = conv['request']
+                st.rerun()
 
+# Footer
+st.divider()
+st.caption("Powered by Groq API |  Fast inference |  Structured JSON outputs")
