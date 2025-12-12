@@ -15,13 +15,14 @@ st.set_page_config(
 
 if 'conversation_history' not in st.session_state:
     st.session_state.conversation_history = []
-if 'api_key' not in st.session_state:
-    st.session_state.api_key = os.getenv('GROQ_API_KEY')
+
+# Get API key from environment variable ONLY (Render sets this)
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 
 st.title(" Universal AI Assistant")
 st.markdown("**Powered by Groq API** - Get structured JSON responses for any task!")
 
-# Available Groq models (updated list)
+# Available Groq models
 AVAILABLE_MODELS = {
     "llama-3.3-70b-versatile": "Llama 3.3 70B - Most capable",
     "llama-3.1-8b-instant": "Llama 3.1 8B - Fast & efficient",
@@ -33,12 +34,9 @@ AVAILABLE_MODELS = {
     "mixtral-8x7b-32768": "Mixtral 8x7B - Expert mixture",
 }
 
-# Sidebar for configuration
+# Sidebar for configuration ONLY
 with st.sidebar:
     st.header(" Configuration")
-    
-    # API Key input
-
     
     selected_model = st.selectbox(
         " Select Model",
@@ -49,7 +47,7 @@ with st.sidebar:
     
     # Temperature slider for creativity control
     temperature = st.slider(
-        " Temperature",
+        "Temperature",
         min_value=0.0,
         max_value=1.0,
         value=0.3,
@@ -63,17 +61,25 @@ with st.sidebar:
         ["Auto JSON", "Structured Data", "Key-Value Pairs", "Custom Schema"]
     )
     
+    # Display deployment status
     st.divider()
-    st.info("**Tip:** For JSON output, use models like llama-3.3-70b for best results")
+    if GROQ_API_KEY:
+        st.success(" API Connected")
+        st.caption("Ready to process requests")
+    else:
+        st.error(" API Not Configured")
+        st.caption("Please set GROQ_API_KEY in environment variables")
+    
+    st.info(" **Tip:** For JSON output, use models like llama-3.3-70b for best results")
 
 # Initialize Groq client
 def setup_groq():
-    if not st.session_state.api_key:
-        st.error("Please enter your Groq API key in the sidebar")
+    if not GROQ_API_KEY:
+        st.error(" API is not configured. Please set GROQ_API_KEY environment variable.")
         return None
     
     try:
-        client = Groq(api_key=st.session_state.api_key)
+        client = Groq(api_key=GROQ_API_KEY)
         return client
     except Exception as e:
         st.error(f" API configuration failed: {str(e)}")
@@ -151,7 +157,7 @@ def display_structured_data(data):
                 for sub_key, sub_value in value.items():
                     display_item(sub_key, sub_value)
         elif isinstance(value, list):
-            with st.expander(f"{key_display} ({len(value)} items)"):
+            with st.expander(f" {key_display} ({len(value)} items)"):
                 for i, item in enumerate(value, 1):
                     if isinstance(item, dict):
                         st.subheader(f"Item {i}")
@@ -167,7 +173,7 @@ def display_item(key, value):
     key_display = key.replace('_', ' ').title()
     
     if isinstance(value, bool):
-        st.write(f"**{key_display}:** {'Yes' if value else 'No'}")
+        st.write(f"**{key_display}:** {' Yes' if value else ' No'}")
     elif isinstance(value, (int, float)):
         st.metric(key_display, value)
     elif isinstance(value, list):
@@ -183,7 +189,7 @@ def display_item(key, value):
 col1, col2 = st.columns([1, 2])
 
 with col1:
-    st.subheader("Your Request")
+    st.subheader(" Your Request")
     user_input = st.text_area(
         "Describe what you need:",
         placeholder="e.g., Create a marketing plan, Analyze data, Generate ideas, Build schedule...",
@@ -192,14 +198,35 @@ with col1:
         help="Be specific for better JSON structure"
     )
     
-   
+    # Action buttons
+    st.subheader(" Quick Actions")
+    col1_1, col1_2, col1_3 = st.columns(3)
+    
+    with col1_1:
+        if st.button(" Generate Plan", use_container_width=True):
+            if user_input:
+                st.session_state.action = "plan"
+    
+    with col1_2:
+        if st.button(" Analyze", use_container_width=True):
+            if user_input:
+                st.session_state.action = "analyze"
+    
+    with col1_3:
+        if st.button(" Brainstorm", use_container_width=True):
+            if user_input:
+                st.session_state.action = "brainstorm"
 
 with col2:
     st.subheader(" Generate Response")
     
-    if st.button("Process Request", type="primary", use_container_width=True):
-        if user_input and st.session_state.api_key:
-            with st.spinner("AI is processing your request..."):
+    if st.button(" Process Request", type="primary", use_container_width=True):
+        if not GROQ_API_KEY:
+            st.error(" API is not configured. Please set GROQ_API_KEY environment variable in Render.")
+        elif not user_input:
+            st.error(" Please enter your request")
+        else:
+            with st.spinner(" AI is processing your request..."):
                 # Generate response
                 response_text = generate_structured_response(user_input)
                 
@@ -208,7 +235,7 @@ with col2:
                     json_data = extract_json_from_text(response_text)
                     
                     if json_data:
-                        st.success("✅ Response Generated Successfully!")
+                        st.success(" Response Generated Successfully!")
                         
                         # Display model info
                         st.info(f"**Model used:** {selected_model} | **Temperature:** {temperature}")
@@ -223,7 +250,7 @@ with col2:
                         # Download JSON
                         json_str = json.dumps(json_data, indent=2)
                         st.download_button(
-                            label=" Download JSON",
+                            label="Download JSON",
                             data=json_str,
                             file_name=f"ai_response_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
                             mime="application/json",
@@ -238,16 +265,11 @@ with col2:
                             'model': selected_model
                         })
                     else:
-                        st.error("Failed to parse JSON response")
-                        st.info("Raw response for debugging:")
+                        st.error(" Failed to parse JSON response")
+                        st.info(" Raw response for debugging:")
                         st.code(response_text)
                 else:
                     st.error("❌ Failed to generate response. Please try again.")
-        else:
-            if not user_input:
-                st.error(" Please enter your request")
-            if not st.session_state.api_key:
-                st.error("Please enter your Groq API key in the sidebar")
 
 # Conversation history
 if st.session_state.conversation_history:
@@ -267,3 +289,4 @@ if st.session_state.conversation_history:
 # Footer
 st.divider()
 st.caption("Powered by Groq API |  Fast inference |  Structured JSON outputs")
+
